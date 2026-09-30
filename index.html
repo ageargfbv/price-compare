@@ -24,6 +24,9 @@ main{max-width:520px;margin:0 auto}
 .tabs{display:flex;gap:6px;margin:12px 0}
 .tabs button{flex:1;background:var(--card);color:var(--fg);border:1px solid var(--line)}
 .tabs button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tabs button.gear{flex:0 0 48px;padding:12px 0;color:var(--sub)}
+.tabs button.gear.keyed{color:var(--good);border-color:var(--good)}
+input.auto{border-color:var(--acc);border-width:2px}
 button,select,input{font:inherit}
 button{border:0;border-radius:10px;padding:12px 16px;background:var(--acc);color:#fff}
 input,select{width:100%;min-width:0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
@@ -68,6 +71,7 @@ summary{cursor:pointer}
 <div class="tabs">
   <button id="tabCheck" class="on">買う前に</button>
   <button id="tabList">一覧</button>
+  <button id="tabSet" class="gear" aria-label="設定">⚙</button>
 </div>
 
 <section id="secCheck">
@@ -114,9 +118,9 @@ async function tx(mode,fn){const db=await idb();return new Promise((ok,ng)=>{con
 const putPhoto=(id,b)=>tx('readwrite',s=>s.put(b,id));
 const getPhoto=id=>tx('readonly',s=>s.get(id));
 const delPhoto=id=>tx('readwrite',s=>s.delete(id));
-function shrink(file,max=900){return new Promise((ok,ng)=>{
+function shrink(file,max=1280){return new Promise((ok,ng)=>{
   const u=URL.createObjectURL(file),im=new Image();
-  im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height));const c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);c.toBlob(b=>b?ok(b):ng(new Error('blob')),'image/jpeg',.72)};
+  im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height));const c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);c.toBlob(b=>b?ok(b):ng(new Error('blob')),'image/jpeg',.8)};
   im.onerror=()=>{URL.revokeObjectURL(u);ng(new Error('img'))};im.src=u})}
 
 // ---- 単価計算 ----
@@ -231,18 +235,98 @@ function fillLists(){
 }
 
 // ---- 入力 ----
+// ---- 写真から読み取り（Gemini・無料枠。キーはこの端末にだけ置く） ----
+const GKEY='price-compare-gemini-key';
+const getKey=()=>{try{return localStorage.getItem(GKEY)||''}catch(e){return ''}};
+const UNITS_OK=['g','kg','ml','L','個'];
+const SCHEMA={type:'OBJECT',properties:{
+  item:{type:'STRING',nullable:true},
+  price:{type:'NUMBER',nullable:true},
+  price_includes_tax:{type:'BOOLEAN',nullable:true},
+  quantity:{type:'NUMBER',nullable:true},
+  unit:{type:'STRING',nullable:true,enum:UNITS_OK},
+  store:{type:'STRING',nullable:true}}};
+function promptText(){
+  const names=[...new Set(recs.map(r=>r.item.trim()))].slice(0,50);
+  return '日本のスーパーの値札・パッケージの写真です。写っている商品を1つ読み取り、JSONで答えてください。\n'
+  +'- item: 商品名。短く一般的な名前（例: 鶏むね肉、キャベツ、豚こま切れ）。産地・ブランド・グラム数は含めない。'
+  +(names.length?'次の既存の商品名と同じ物なら、その表記をそのまま使う: '+names.join('、')+'\n':'\n')
+  +'- price: この商品1パック（1個）の販売価格。数字のみ。「100gあたり」などの単価表示ではない方。税込と税抜が並ぶ場合は税込の値。\n'
+  +'- price_includes_tax: price が税込ならtrue、税抜ならfalse、分からなければnull。\n'
+  +'- quantity と unit: 内容量。g・kg・ml・L・個（本・枚・パックも「個」）。量り売りなどで分からなければnull。\n'
+  +'- store: 店名が写っていればその名前。なければnull。\n'
+  +'読み取れない項目は推測せずnullにする。';
+}
+async function readTag(blob){
+  const key=getKey();if(!key)return null;
+  const b64=await new Promise((ok,ng)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=ng;r.readAsDataURL(blob)});
+  const body=JSON.stringify({contents:[{parts:[{text:promptText()},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],
+    generationConfig:{temperature:0,responseMimeType:'application/json',responseSchema:SCHEMA}});
+  for(const model of ['gemini-flash-latest','gemini-2.5-flash']){
+    const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',
+      {method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body});
+    if(res.status===404)continue;
+    if(!res.ok){const e=new Error('http');e.status=res.status;throw e}
+    const j=await res.json();
+    const t=((j.candidates||[])[0]?.content?.parts||[]).map(p=>p.text||'').join('');
+    return JSON.parse(t);
+  }
+  const e=new Error('model');e.status=404;throw e;
+}
+function applyTag(r){
+  const set=(id,v)=>{if(v===null||v===undefined||v==='')return;$(id).value=v;$(id).classList.add('auto')};
+  set('item',typeof r.item==='string'?r.item.trim():null);
+  set('price',r.price>0?r.price:null);
+  if(typeof r.price_includes_tax==='boolean'){$('tax').value=r.price_includes_tax?'in':'ex'}
+  set('qty',r.quantity>0?r.quantity:null);
+  if(UNITS_OK.includes(r.unit))$('unit').value=r.unit;
+  if(!$('store').value&&typeof r.store==='string')set('store',r.store.trim());
+}
+function showMsg(big,sm){
+  const v=$('verdict');v.className='';v.querySelectorAll('.sm').forEach(e=>e.remove());
+  v.querySelector('.big').textContent=big;
+  if(sm){const d=document.createElement('div');d.className='sm';d.textContent=sm;v.append(d)}
+}
+function errText(e){
+  if(e.status===429)return '無料枠の上限です。しばらくしてからもう一度';
+  if(e.status===400||e.status===401||e.status===403)return 'APIキーを確認してください';
+  if(e.status===404)return 'モデルが見つかりません';
+  return '通信できませんでした';
+}
+const refreshGear=()=>$('tabSet').classList.toggle('keyed',!!getKey());
+$('tabSet').onclick=()=>{
+  const SET='（設定済み）';
+  const v=prompt('Gemini APIキー（空にしてOKで削除）',getKey()?SET:'');
+  if(v===null)return;
+  const t=v.trim();if(t===SET)return;
+  try{if(t)localStorage.setItem(GKEY,t);else localStorage.removeItem(GKEY)}catch(e){}
+  refreshGear();
+};
+refreshGear();
+
 let pending=null,pendingUrl=null;
 $('file').onchange=async e=>{
-  const f=e.target.files[0];if(!f)return;
+  const f=e.target.files[0];e.target.value='';if(!f)return;
   try{
     pending=await shrink(f);
     if(pendingUrl)URL.revokeObjectURL(pendingUrl);
     pendingUrl=URL.createObjectURL(pending);
     const p=$('prev');p.src=pendingUrl;p.hidden=false;
-  }catch(err){alert('写真を読み込めませんでした')}
-  e.target.value='';
+  }catch(err){alert('写真を読み込めませんでした');return}
+  if(!getKey())return;
+  showMsg('読み取り中…');
+  try{
+    document.querySelectorAll('input.auto').forEach(i=>i.classList.remove('auto'));
+    const r=await readTag(pending);
+    if(r)applyTag(r);
+    updateVerdict();
+  }catch(err){showMsg('読み取れませんでした',errText(err))}
 };
-['item','price','tax','qty','unit'].forEach(id=>{$(id).addEventListener('input',updateVerdict);$(id).addEventListener('change',updateVerdict)});
+['item','price','tax','qty','unit'].forEach(id=>{
+  const on=e=>{e.target.classList.remove('auto');updateVerdict()};
+  $(id).addEventListener('input',on);$(id).addEventListener('change',on);
+});
+$('store').addEventListener('input',e=>e.target.classList.remove('auto'));
 // 品名を選んだら、前回の単位を引き継ぐ
 $('item').addEventListener('change',()=>{
   const last=[...recs].reverse().find(r=>sameItem(r.item,$('item').value));
@@ -262,6 +346,7 @@ $('save').onclick=async()=>{
   persist();
   try{localStorage.setItem(KEY+'-store',store)}catch(e){}
   ['item','price','qty'].forEach(k=>$(k).value='');
+  document.querySelectorAll('input.auto').forEach(i=>i.classList.remove('auto'));
   pending=null;$('prev').hidden=true;$('prev').removeAttribute('src');
   fillLists();updateVerdict();
   const b=$('save');b.textContent='記録しました';setTimeout(()=>b.textContent='記録する',1200);
