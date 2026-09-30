@@ -87,6 +87,8 @@ summary{cursor:pointer;font-weight:700}
 .tabbar a{flex:1;height:var(--tab);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;text-decoration:none;color:var(--sub);font-size:11px;font-weight:800}
 .tabbar a .i{font-size:22px;line-height:1}
 .tabbar a.cur{color:var(--acc)}
+.bk{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;margin:22px 0 4px;font-size:12px;color:var(--sub);font-weight:700}
+.bk button{padding:5px 12px;font-size:12px;border-radius:99px;background:var(--card);color:var(--gd);box-shadow:none;border:2px solid var(--line);font-weight:800}
 </style>
 </head>
 <body>
@@ -128,6 +130,7 @@ summary{cursor:pointer;font-weight:700}
 </section>
 
 <section id="secList" hidden><div id="list"></div></section>
+<div class="bk"><span id="bkSt"></span><button id="bkSet" type="button">設定</button><button id="bkNow" type="button">今すぐ</button><button id="bkRestore" type="button">戻す</button></div>
 <p class="credit">立ち絵：坂本アヒルさん</p>
 </main>
 <nav class="tabbar">
@@ -142,7 +145,7 @@ const KEY='price-compare-v1', DAY=86400000;
 const UNIT={g:{per:100,disp:'100g',kind:'w'},ml:{per:100,disp:'100ml',kind:'v'},'個':{per:1,disp:'1個',kind:'c'}};
 let recs=[];
 try{recs=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){}
-const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(recs))}catch(e){alert('保存できませんでした')}};
+const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(recs))}catch(e){alert('保存できませんでした')}bkSoon()};
 const $=id=>document.getElementById(id);
 const yen=n=>(Math.round(n*10)/10).toLocaleString('ja-JP');
 
@@ -461,6 +464,97 @@ fillLists();updateVerdict();
 autoStore();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){storeDirty=false;autoStore()}});
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+
+function bkCollect(){return {recs}}
+function bkEmpty(){return !recs.length}
+// 足りない記録だけ加える（今の記録は消さない）。写真は含まれない
+function bkApply(d){
+  let n=0;
+  for(const x of (d.recs||[])){if(x&&x.id&&!recs.some(y=>y.id===x.id)){recs.push(x);n++}}
+  persist();fillLists();updateVerdict();
+  if(!$('secList').hidden)renderList();
+  return n+'件';
+}
+
+// ---- バックアップ（GitHub の非公開リポジトリ backup-data）----
+// トークン（Fine-grained・このリポジトリの Contents だけ）は端末にだけ置く。2つのアプリで共有。写真は含めない
+const BK={owner:'ageargfbv',repo:'backup-data',tokKey:'backup-gh-token',file:'price-compare.json',lastKey:'backup-last-price-compare'};
+const bkTok=()=>{try{return localStorage.getItem(BK.tokKey)||''}catch(e){return ''}};
+const bkGet=k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}};
+const bkSet=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+const b64=s=>{const b=new TextEncoder().encode(s);let x='';for(let i=0;i<b.length;i+=0x8000)x+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));return btoa(x)};
+const unb64=s=>{const x=atob(s.replace(/\s/g,'')),b=new Uint8Array(x.length);for(let i=0;i<x.length;i++)b[i]=x.charCodeAt(i);return new TextDecoder().decode(b)};
+const bkHash=s=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(36)+':'+s.length};
+const bkApi=(method,path,body)=>fetch('https://api.github.com/repos/'+BK.owner+'/'+BK.repo+path,{method,
+  headers:{'Authorization':'Bearer '+bkTok(),'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+  body:body?JSON.stringify(body):undefined});
+const bkErr=e=>{const s=e&&e.status;return s===401||s===403?'トークンを確認してください（'+s+'）':s===404?'保管庫が見つかりません（404）':s?'保存できませんでした（'+s+'）':'通信できませんでした'};
+async function bkRemote(){
+  const r=await bkApi('GET','/contents/'+BK.file+'?t='+Date.now());
+  if(r.status===404)return null;
+  if(!r.ok){const e=new Error('http');e.status=r.status;throw e}
+  const j=await r.json();
+  return {sha:j.sha,payload:JSON.parse(unb64(j.content))};
+}
+function bkStatus(msg){
+  const el=document.getElementById('bkSt');if(!el)return;
+  if(msg){el.textContent='☁ '+msg;return}
+  const at=+bkGet(BK.lastKey+'-at');
+  el.textContent=!bkTok()?'☁ バックアップ：未設定':at?'☁ 最後の保存 '+new Date(at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'☁ つながっています（まだ保存していません）';
+}
+let bkBusy=false,bkTimer=0,bkDirty=false;
+// データが変わったら、少し待ってから自動で送る（続けて変えたときは最後の1回だけ）
+function bkSoon(){try{if(!bkTok())return;bkDirty=true;clearTimeout(bkTimer);bkTimer=setTimeout(()=>bkPush(),8000)}catch(e){}}   // 起動直前（下の定義より前）に呼ばれても落ちない
+async function bkPush(force){
+  if(!bkTok()||bkBusy)return;
+  clearTimeout(bkTimer);bkDirty=false;
+  const data=bkCollect(),body=JSON.stringify(data),hash=bkHash(body);
+  if(!force&&bkGet(BK.lastKey)===hash)return;
+  bkBusy=true;bkStatus('保存中…');
+  try{
+    const rem=await bkRemote();
+    const put=sha=>bkApi('PUT','/contents/'+BK.file,{message:'バックアップ '+new Date().toLocaleString('ja-JP'),
+      content:b64(JSON.stringify({app:'price-compare',savedAt:Date.now(),data})),...(sha?{sha}:{})});
+    let r=await put(rem&&rem.sha);
+    if(r.status===409||r.status===422){const rem2=await bkRemote();r=await put(rem2&&rem2.sha)}
+    if(!r.ok){const e=new Error('http');e.status=r.status;throw e}
+    bkSet(BK.lastKey,hash);bkSet(BK.lastKey+'-at',String(Date.now()));bkStatus();
+  }catch(e){bkStatus(bkErr(e));bkDirty=true}
+  finally{bkBusy=false}
+}
+async function bkRestore(auto){
+  if(!bkTok()){bkStatus('先に「設定」でトークンを入れてください');return}
+  try{
+    const rem=await bkRemote();
+    if(!rem){bkStatus('保存がまだありません');return}
+    const when=new Date(rem.payload.savedAt).toLocaleString('ja-JP');
+    if(!confirm('GitHubの保存（'+when+'）を取り込みますか？\n今の内容は消えず、足りない分が加わります。')){if(auto)bkSet('backup-declined-price-compare',String(Date.now()));return}
+    const n=bkApply(rem.payload.data||{});
+    bkSet(BK.lastKey,'');bkStatus('取り込みました（'+n+'）');
+  }catch(e){bkStatus(bkErr(e))}
+}
+async function bkSetup(){
+  const SET='（設定済み）';
+  const v=prompt('GitHubのトークン（空にすると削除）',bkTok()?SET:'');
+  if(v===null)return;
+  const t=v.trim();if(t===SET)return;
+  if(!t){try{localStorage.removeItem(BK.tokKey)}catch(e){}bkStatus();return}
+  bkSet(BK.tokKey,t);bkStatus('確認中…');
+  try{
+    const r=await bkApi('GET','');
+    if(!r.ok){const e=new Error('http');e.status=r.status;throw e}
+    bkStatus('つながりました');
+    if(bkEmpty())await bkRestore(false);else await bkPush(true);
+  }catch(e){bkStatus(bkErr(e))}
+}
+document.getElementById('bkSet').onclick=bkSetup;
+document.getElementById('bkNow').onclick=()=>bkPush(true);
+document.getElementById('bkRestore').onclick=()=>bkRestore(false);
+// アプリを離れるとき、送っていない変更があれば送る
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&bkDirty)bkPush()});
+bkStatus();
+// データが空なのに保存がある（消えたあと）ときは、取り込みを勧める。断ったら1日は聞かない
+if(bkTok()&&bkEmpty()&&Date.now()-(+bkGet('backup-declined-price-compare')||0)>864e5)bkRestore(true);
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));
 </script>
 </body>
