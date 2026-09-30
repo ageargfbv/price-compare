@@ -350,11 +350,48 @@ $('store').addEventListener('input',e=>e.target.classList.remove('auto'));
 // 品名を選んだら、前回の単位を引き継ぐ
 $('item').addEventListener('change',()=>{
   const last=[...recs].reverse().find(r=>sameItem(r.item,$('item').value));
-  if(last){$('unit').value=last.unit;if(!$('store').value)$('store').value=last.store}
+  if(last){$('unit').value=last.unit;if(!$('store').value&&!pos)$('store').value=last.store}
   updateVerdict();
 });
 let lastStore='';try{lastStore=localStorage.getItem(KEY+'-store')||''}catch(e){}
 $('store').value=lastStore;
+
+// ---- 近くの店を自動で入れる（位置は端末の中だけ。Geminiには送らない） ----
+let pos=null,storeDirty=false;
+function locate(){
+  if(!navigator.geolocation)return Promise.resolve(null);
+  return new Promise(ok=>navigator.geolocation.getCurrentPosition(
+    p=>{pos={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy,ts:Date.now()};ok(pos)},
+    ()=>ok(null),{enableHighAccuracy:false,timeout:8000,maximumAge:60000}));
+}
+const rad=x=>x*Math.PI/180;
+function dist(a,b){
+  const s=Math.sin(rad(b.lat-a.lat)/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(rad(b.lng-a.lng)/2)**2;
+  return 12742000*Math.asin(Math.sqrt(s));
+}
+function storeLocs(){
+  const m=new Map();
+  for(const r of recs){
+    if(typeof r.lat!=='number'||typeof r.lng!=='number')continue;
+    const k=r.store.trim(),o=m.get(k);
+    if(!o||r.ts>o.ts)m.set(k,{store:k,lat:r.lat,lng:r.lng,ts:r.ts});
+  }
+  return [...m.values()];
+}
+function nearestStore(p){
+  let best=null;
+  for(const s of storeLocs()){const d=dist(p,s);if(d<=150&&(!best||d<best.d))best={store:s.store,d}}
+  return best;
+}
+async function autoStore(){
+  const p=await locate();
+  if(!p||p.acc>300||storeDirty)return;
+  const n=nearestStore(p),el=$('store');
+  if(n){el.value=n.store;el.classList.add('auto')}
+  else{el.value='';el.classList.remove('auto')}
+  updateVerdict();
+}
+$('store').addEventListener('input',()=>{storeDirty=true});
 
 $('save').onclick=async()=>{
   const item=$('item').value.trim(),store=$('store').value.trim(),c=current();
@@ -362,7 +399,11 @@ $('save').onclick=async()=>{
   const id=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   let photo=null;
   if(pending){try{await putPhoto(id,pending);photo=id}catch(e){alert('写真は保存できませんでした（記録は保存します）')}}
-  recs.push({id,item,store,price:c.price,qty:c.qty,unit:c.unit,photo,ts:Date.now()});
+  const here=pos&&Date.now()-pos.ts<600000?pos:await locate();
+  const rec={id,item,store,price:c.price,qty:c.qty,unit:c.unit,photo,ts:Date.now()};
+  if(here&&here.acc<=300){rec.lat=Math.round(here.lat*1e5)/1e5;rec.lng=Math.round(here.lng*1e5)/1e5}
+  recs.push(rec);
+  storeDirty=false;
   persist();
   try{localStorage.setItem(KEY+'-store',store)}catch(e){}
   ['item','price','qty'].forEach(k=>$(k).value='');
@@ -382,6 +423,8 @@ $('tabCheck').onclick=()=>tab('check');
 $('tabList').onclick=()=>tab('list');
 
 fillLists();updateVerdict();
+autoStore();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){storeDirty=false;autoStore()}});
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));
 </script>
