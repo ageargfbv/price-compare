@@ -368,7 +368,7 @@ $('file').onchange=async e=>{
     pendingUrl=URL.createObjectURL(pending);
     const p=$('prev');p.src=pendingUrl;p.hidden=false;
   }catch(err){alert('写真を読み込めませんでした');return}
-  if(!getKey())return;
+  if(!getKey()){showMsg('APIキーが入っていないのだ','右上の⚙で入れると、写真から読み取れるのだ');return}
   showMsg('読み取り中…');
   try{
     document.querySelectorAll('input.auto').forEach(i=>i.classList.remove('auto'));
