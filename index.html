@@ -12,21 +12,20 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="最安くらべ">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+1p:wght@400;500;700;800&display=swap">
 <style>
+@font-face{font-family:"Dela Gothic One";src:url(dela.woff2) format("woff2");font-display:swap}
 :root{--bg:#f2f9e6;--card:#fff;--card2:#eef6df;--fg:#1d2b12;--sub:#6a7a58;--acc:#4aa52e;--acc2:#8bd44a;--gd:#2f7d1e;--soft:#e2f5bd;--line:#dfeccb;--good:#2f8f3e;--bad:#d64545;--warn:#b7791f;--shadow:0 5px 0 var(--line),0 8px 18px rgba(50,90,20,.14);--tab:66px}
 @media (prefers-color-scheme:dark){:root{--bg:#11190d;--card:#1b2615;--card2:#243020;--fg:#eef5e6;--sub:#a3b394;--acc:#6cc24a;--acc2:#4aa52e;--gd:#9be36f;--soft:#26401b;--line:#2c3a24;--good:#6cc24a;--bad:#ff8a8a;--warn:#ecc94b;--shadow:0 5px 0 #0a1007,0 8px 18px rgba(0,0,0,.4)}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 html{background:var(--bg)}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 "M PLUS 1p",system-ui,-apple-system,"Hiragino Sans","Yu Gothic",sans-serif;padding-bottom:calc(var(--tab) + env(safe-area-inset-bottom) + 24px);-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Hiragino Sans","Yu Gothic",sans-serif;padding-bottom:calc(var(--tab) + env(safe-area-inset-bottom) + 24px);-webkit-text-size-adjust:100%}
 
 /* 上の帯（買い物メモと同じ細さ） */
 .hd{background:linear-gradient(135deg,#55b834,#8bd44a);color:#fff;padding:calc(env(safe-area-inset-top) + 12px) 16px 14px;border-radius:0 0 20px 20px;box-shadow:0 4px 0 rgba(47,125,30,.35)}
 .hd-in{max-width:520px;margin:0 auto}
 .top{display:flex;align-items:center;justify-content:space-between}
-.logo{display:flex;align-items:center;gap:8px;font:400 21px/1 "Dela Gothic One","M PLUS 1p",sans-serif;text-shadow:0 2px 0 rgba(30,80,10,.35)}
+.logo{display:flex;align-items:center;gap:8px;font:400 21px/1 "Dela Gothic One",sans-serif;text-shadow:0 2px 0 rgba(30,80,10,.35)}
 .logo i{width:34px;height:34px;border-radius:10px;background:#fff;display:grid;place-items:center;font-style:normal;font-size:19px;text-shadow:none}
 .tools{display:flex;gap:7px}
 .ico{width:34px;height:34px;padding:0;border-radius:50%;background:rgba(255,255,255,.28);font-size:16px;display:grid;place-items:center;color:#fff;box-shadow:none}
