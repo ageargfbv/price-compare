@@ -1,4 +1,4 @@
-const CACHE = 'price-compare-v8';
+const CACHE = 'price-compare-v9';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './zun-normal.png', './zun-smile.png', './zun-surprise.png'];
 
 self.addEventListener('install', e => {
