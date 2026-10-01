@@ -118,6 +118,7 @@ summary{cursor:pointer;font-weight:700}
     <datalist id="items"></datalist>
     <input id="store" list="stores" placeholder="お店" autocomplete="off" style="margin-bottom:8px">
     <datalist id="stores"></datalist>
+    <div id="storeChips" style="display:none;flex-wrap:wrap;gap:6px;margin:-2px 0 8px"></div>
     <div class="row">
       <input id="price" type="number" inputmode="decimal" min="0" placeholder="値段（円）">
       <select id="tax" class="narrow"><option value="in">税込</option><option value="ex">税抜</option></select>
@@ -428,17 +429,27 @@ function storeLocs(){
   }
   return [...m.values()];
 }
-function nearestStore(p){
-  let best=null;
-  for(const s of storeLocs()){const d=dist(p,s);if(d<=150&&(!best||d<best.d))best={store:s.store,d}}
-  return best;
+// 位置の誤差が大きいときほど広めに見る（60〜150m）。近い順の店名（重複なし）
+function nearbyStores(p){
+  const R=Math.min(150,Math.max(60,p.acc*1.5)),m=new Map();
+  for(const s of storeLocs()){const d=dist(p,s);if(d<=R&&(!m.has(s.store)||d<m.get(s.store)))m.set(s.store,d)}
+  return [...m].sort((a,b)=>a[1]-b[1]).map(x=>x[0]);
+}
+function showChips(names){
+  const box=$('storeChips');box.textContent='';box.style.display=names.length?'flex':'none';
+  for(const n of names.slice(0,4)){
+    const b=document.createElement('button');b.type='button';b.textContent=n;
+    b.style.cssText='padding:6px 12px;font-size:13px;border-radius:99px;box-shadow:none;background:var(--card);color:var(--gd);border:2px solid var(--acc)';
+    b.onclick=()=>{const el=$('store');el.value=n;el.classList.remove('auto');storeDirty=true;showChips([]);updateVerdict()};
+    box.append(b);
+  }
 }
 async function autoStore(){
   const p=await locate();
   if(!p||p.acc>300||storeDirty)return;
-  const n=nearestStore(p),el=$('store');
-  if(n){el.value=n.store;el.classList.add('auto')}
-  else{el.value='';el.classList.remove('auto')}
+  const names=nearbyStores(p),el=$('store');
+  if(names.length===1){el.value=names[0];el.classList.add('auto');showChips([])}
+  else{el.value='';el.classList.remove('auto');showChips(names)} // 複数なら自動入力せず、候補から選ぶ
   updateVerdict();
 }
 $('store').addEventListener('input',()=>{storeDirty=true});
