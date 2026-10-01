@@ -142,7 +142,7 @@ summary{cursor:pointer;font-weight:700}
   </div>
   <div id="rout"></div>
 </section>
-<div class="bk"><span id="bkSt"></span><button id="bkSet" type="button">設定</button><button id="bkNow" type="button">今すぐ</button><button id="bkRestore" type="button">戻す</button></div>
+<div class="bk"><span id="bkSt"></span><button id="bkSet" type="button">設定</button><button id="bkNow" type="button">今すぐ</button><button id="bkRestore" type="button">戻す</button><button id="homeSet" type="button">🏠 家</button></div>
 <p class="credit">立ち絵：坂本アヒルさん</p>
 </main>
 <nav class="tabbar">
@@ -462,9 +462,27 @@ function showChips(names){
     box.append(b);
   }
 }
+// 家の位置（この端末の中だけ。バックアップにも入れない）。家にいる間は店を自動入力しない
+const HOME_KEY='price-compare-home';
+const getHome=()=>{try{const h=JSON.parse(localStorage.getItem(HOME_KEY)||'null');return h&&typeof h.lat==='number'&&typeof h.lng==='number'?h:null}catch(e){return null}};
+const refreshHome=()=>{$('homeSet').textContent=getHome()?'🏠 家（設定済み）':'🏠 家'};
+$('homeSet').onclick=async()=>{
+  if(getHome()){
+    if(confirm('家の位置を消しますか？'))try{localStorage.removeItem(HOME_KEY)}catch(e){}
+    refreshHome();return;
+  }
+  const p=await locate();
+  if(!p||p.acc>100){alert('位置がうまく取れませんでした。屋外か窓の近くで、もう一度押してください');return}
+  if(!confirm('今いる場所を家にしますか？（この端末の中だけに保存。GitHubにも送りません）'))return;
+  try{localStorage.setItem(HOME_KEY,JSON.stringify({lat:Math.round(p.lat*1e5)/1e5,lng:Math.round(p.lng*1e5)/1e5}))}catch(e){alert('保存できませんでした')}
+  refreshHome();autoStore();
+};
+refreshHome();
 async function autoStore(){
   const p=await locate();
   if(!p||p.acc>300||storeDirty)return;
+  const home=getHome();
+  if(home&&dist(p,home)<=50){const e=$('store');e.value='';e.classList.remove('auto');showChips([]);updateVerdict();return}
   const names=nearbyStores(p),el=$('store');
   if(names.length===1){el.value=names[0];el.classList.add('auto');showChips([])}
   else{el.value='';el.classList.remove('auto');showChips(names)} // 複数なら自動入力せず、候補から選ぶ
