@@ -105,6 +105,7 @@ summary{cursor:pointer;font-weight:700}
 <div class="seg">
   <button id="tabCheck" class="on">買う前に</button>
   <button id="tabList">一覧</button>
+  <button id="tabRcpt">レシート</button>
 </div>
 
 <section id="secCheck">
@@ -131,6 +132,14 @@ summary{cursor:pointer;font-weight:700}
 </section>
 
 <section id="secList" hidden><div id="list"></div></section>
+
+<section id="secRcpt" hidden>
+  <div class="card">
+    <div class="photo"><label>📷 レシートを撮る<input id="rfile" type="file" accept="image/*" hidden></label></div>
+    <div id="rmsg" style="white-space:pre-line;font-size:13px;color:var(--sub);margin-top:8px"></div>
+  </div>
+  <div id="rout"></div>
+</section>
 <div class="bk"><span id="bkSt"></span><button id="bkSet" type="button">設定</button><button id="bkNow" type="button">今すぐ</button><button id="bkRestore" type="button">戻す</button></div>
 <p class="credit">立ち絵：坂本アヒルさん</p>
 </main>
@@ -296,11 +305,12 @@ function promptText(){
   +'- store: 店名が写っていればその名前。なければnull。\n'
   +'読み取れない項目は推測せずnullにする。';
 }
-async function readTag(blob){
+const readTag=blob=>askGemini(blob,promptText(),SCHEMA);
+async function askGemini(blob,prompt,schema){
   const key=getKey();if(!key)return null;
   const b64=await new Promise((ok,ng)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=ng;r.readAsDataURL(blob)});
-  const body=JSON.stringify({contents:[{parts:[{text:promptText()},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],
-    generationConfig:{temperature:0,responseMimeType:'application/json',responseSchema:SCHEMA}});
+  const body=JSON.stringify({contents:[{parts:[{text:prompt},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],
+    generationConfig:{temperature:0,responseMimeType:'application/json',responseSchema:schema}});
   // 混んでいる・見つからない・上限のときは次のモデルへ。一巡してもだめなら2秒待って、もう一巡だけする
   const MODELS=['gemini-flash-latest','gemini-2.5-flash','gemini-2.5-flash-lite','gemini-flash-lite-latest'];
   const SKIP=[404,429,500,503];
@@ -454,12 +464,52 @@ $('save').onclick=async()=>{
 
 // ---- タブ ----
 function tab(name){
-  $('secCheck').hidden=name!=='check';$('secList').hidden=name!=='list';
-  $('tabCheck').classList.toggle('on',name==='check');$('tabList').classList.toggle('on',name==='list');
+  $('secCheck').hidden=name!=='check';$('secList').hidden=name!=='list';$('secRcpt').hidden=name!=='rcpt';
+  $('tabCheck').classList.toggle('on',name==='check');$('tabList').classList.toggle('on',name==='list');$('tabRcpt').classList.toggle('on',name==='rcpt');
   if(name==='list')renderList();
 }
 $('tabCheck').onclick=()=>tab('check');
 $('tabList').onclick=()=>tab('list');
+$('tabRcpt').onclick=()=>tab('rcpt');
+
+// ---- レシート読み取り（試験：読み取った結果を見るだけ。記録には入れない） ----
+const RSCHEMA={type:'OBJECT',properties:{
+  store:{type:'STRING',nullable:true},
+  date:{type:'STRING',nullable:true},
+  total:{type:'NUMBER',nullable:true},
+  items:{type:'ARRAY',items:{type:'OBJECT',properties:{
+    raw:{type:'STRING'},name:{type:'STRING'},price:{type:'NUMBER'},
+    quantity:{type:'NUMBER',nullable:true},unit:{type:'STRING',nullable:true,enum:UNITS_OK},
+    kind:{type:'STRING',enum:['品目','値引き','小計・税・合計・支払い','その他']}}}}}};
+const RPROMPT='日本のスーパーのレシートの写真です。全行を読み取り、JSONで答えてください。\n'
+  +'- store: 店名。date: 日付（YYYY-MM-DD）。total: 合計金額（税込）。\n'
+  +'- items: 品目の行ごとに1要素。raw は印字そのまま（半角カナ含む）、name は一般的な商品名に直したもの（例: ﾎｳﾚﾝｿｳ→ほうれん草）。\n'
+  +'- price: その行の金額（数字のみ）。値引き行はマイナスで kind を「値引き」。\n'
+  +'- quantity と unit: 行に個数やグラム数が印字されていればその値。なければnull。\n'
+  +'- kind: 品目／値引き／小計・税・合計・支払い／その他 のどれか。\n'
+  +'読み取れない項目は推測せずnullにする。';
+$('rfile').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const out=$('rout');out.textContent='';
+  if(!getKey()){$('rmsg').textContent='右上の⚙でAPIキーを入れてください';return}
+  $('rmsg').textContent='読み取り中…';
+  try{
+    const r=await askGemini(await shrink(f,2000),RPROMPT,RSCHEMA);
+    const items=(r.items||[]),buy=items.filter(i=>i.kind==='品目');
+    const sum=items.filter(i=>i.kind==='品目'||i.kind==='値引き').reduce((a,i)=>a+(+i.price||0),0);
+    $('rmsg').textContent=(r.store||'店名なし')+' ・ '+(r.date||'日付なし')+' ・ 合計 '+(r.total!=null?yen(r.total)+'円':'—')
+      +'\n品目 '+buy.length+'行 ／ 品目と値引きの合計 '+yen(sum)+'円'+(r.total!=null&&Math.abs(sum-r.total)>1?'（合計と '+yen(sum-r.total)+'円ずれ）':'（合計と一致）');
+    const card=document.createElement('div');card.className='card';
+    for(const i of items){
+      const row=document.createElement('div');row.className='hist';
+      const s=document.createElement('span');s.style.flex='1';
+      s.textContent=(i.kind==='品目'?'':'['+i.kind+'] ')+i.name+'（'+i.raw+'）'+(i.quantity?' '+i.quantity+(i.unit||''):'');
+      const p=document.createElement('b');p.textContent=yen(i.price);
+      row.append(s,p);card.append(row);
+    }
+    out.append(card);
+  }catch(err){$('rmsg').textContent='読み取れませんでした\n'+errText(err)}
+};
 
 fillLists();updateVerdict();
 autoStore();
