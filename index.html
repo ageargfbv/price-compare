@@ -419,11 +419,12 @@ function dist(a,b){
   return 12742000*Math.asin(Math.sqrt(s));
 }
 function storeLocs(){
+  // 同じ店名でも、記録した場所を全部覚える（別の店舗でも自動入力できる）。約10mごとに1つへまとめる
   const m=new Map();
   for(const r of recs){
     if(typeof r.lat!=='number'||typeof r.lng!=='number')continue;
-    const k=r.store.trim(),o=m.get(k);
-    if(!o||r.ts>o.ts)m.set(k,{store:k,lat:r.lat,lng:r.lng,ts:r.ts});
+    const s=r.store.trim(),k=s+'|'+r.lat.toFixed(4)+'|'+r.lng.toFixed(4);
+    if(!m.has(k))m.set(k,{store:s,lat:r.lat,lng:r.lng});
   }
   return [...m.values()];
 }
