@@ -1,5 +1,5 @@
-const CACHE = 'price-compare-v18';
-const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './dela.woff2', './zun-normal.png', './zun-smile.png', './zun-surprise.png'];
+const CACHE = 'price-compare-v19';
+const FILES = ['./', './index.html', './manifest.webmanifest', './stores.json','./icon-180.png', './icon-192.png', './icon-512.png', './dela.woff2', './zun-normal.png', './zun-smile.png', './zun-surprise.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -19,7 +19,7 @@ self.addEventListener('fetch', e => {
   if (r.method !== 'GET') return;
   const u = new URL(r.url);
   if (u.origin !== location.origin) return;
-  const isPage = r.mode === 'navigate' || /(^|\/)(index\.html)?$/.test(u.pathname) || u.pathname.endsWith('.webmanifest');
+  const isPage = r.mode === 'navigate' || /(^|\/)(index\.html)?$/.test(u.pathname) || u.pathname.endsWith('.webmanifest') || u.pathname.endsWith('/stores.json');
   e.respondWith((async () => {
     const c = await caches.open(CACHE);
     const cached = await c.match(r, { ignoreSearch: true });

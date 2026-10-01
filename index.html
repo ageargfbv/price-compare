@@ -280,7 +280,7 @@ async function renderList(){
 function fillLists(){
   const fill=(id,vals)=>{const dl=$(id);dl.textContent='';[...new Set(vals)].forEach(v=>{const o=document.createElement('option');o.value=v;dl.append(o)})};
   fill('items',recs.map(r=>r.item.trim()));
-  fill('stores',recs.map(r=>r.store.trim()));
+  fill('stores',[...recs.map(r=>r.store.trim()),...presets.map(s=>s.store)]);
 }
 
 // ---- 入力 ----
@@ -419,9 +419,13 @@ function dist(a,b){
   const s=Math.sin(rad(b.lat-a.lat)/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(rad(b.lng-a.lng)/2)**2;
   return 12742000*Math.asin(Math.sqrt(s));
 }
+// 事前に登録した店の場所（stores.json。店名と座標だけの公開情報）
+let presets=[];
+fetch('stores.json').then(r=>r.ok?r.json():[]).then(j=>{if(Array.isArray(j)){presets=j.filter(s=>s&&s.store&&typeof s.lat==='number'&&typeof s.lng==='number');fillLists();autoStore()}}).catch(()=>{});
 function storeLocs(){
   // 同じ店名でも、記録した場所を全部覚える（別の店舗でも自動入力できる）。約10mごとに1つへまとめる
   const m=new Map();
+  for(const s of presets)m.set(s.store+'|'+s.lat.toFixed(4)+'|'+s.lng.toFixed(4),{store:s.store,lat:s.lat,lng:s.lng});
   for(const r of recs){
     if(typeof r.lat!=='number'||typeof r.lng!=='number')continue;
     const s=r.store.trim(),k=s+'|'+r.lat.toFixed(4)+'|'+r.lng.toFixed(4);
