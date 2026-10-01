@@ -203,7 +203,7 @@ function current(){
 const APPS=[
   {re:/daiso|ダイソー/i,label:'DAISOアプリで在庫を見る',url:()=>'https://apps.apple.com/jp/app/id6466987025'},
   {re:/uniqlo|ユニクロ/i,label:'ユニクロで探す',url:item=>'https://www.uniqlo.com/jp/ja/search?q='+encodeURIComponent(item)},
-  {re:/muji|無印/i,label:'MUJIアプリの案内',url:()=>'https://www.muji.com/jp/ja/service/app/'}
+  {re:/muji|無印/i,label:'MUJIアプリで在庫を見る',url:()=>'https://apps.apple.com/jp/app/muji-passport/id631993791'}
 ];
 function updateAppLink(){
   const a=$('appLink'),st=$('store').value,it=$('item').value.trim();
